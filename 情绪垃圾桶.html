@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>情绪焚化炉 - 极致解压版</title>
+    <style>
+        :root {
+            --bg-color: #111111; /* 改为深色背景，让火焰更亮 */
+            --card-bg: #1e1e1e;
+            --text-color: #e0e0e0;
+            --accent-color: #0a84ff;
+            --fire-core: #ffcc00;
+            --fire-outer: #ff4500;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, sans-serif; }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: background-color 0.5s;
+        }
+
+        /* 画布层：用于渲染粒子火焰 */
+        #particleCanvas {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* 让鼠标事件穿透 */
+            z-index: 50;
+        }
+
+        header {
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 10;
+        }
+
+        .history-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #aaa;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            backdrop-filter: blur(10px);
+            transition: 0.3s;
+        }
+        .history-btn:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+        main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            position: relative;
+            z-index: 10;
+        }
+
+        /* 输入容器 */
+        .input-wrapper {
+            width: 100%;
+            max-width: 600px;
+            perspective: 1000px; /* 开启3D透视 */
+            position: relative;
+        }
+
+        .paper-sheet {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 2px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            transition: all 0.3s;
+            position: relative;
+            transform-style: preserve-3d;
+            border: 1px solid #333;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            border: none;
+            outline: none;
+            background: transparent;
+            font-size: 22px;
+            line-height: 1.6;
+            resize: none;
+            color: #ddd;
+            padding: 20px;
+            display: block;
+        }
+
+        textarea::placeholder { color: #555; }
+
+        /* 标签 */
+        .tags-wrapper {
+            margin-top: 25px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .tag {
+            padding: 8px 18px;
+            border-radius: 20px;
+            font-size: 14px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.05);
+            color: #888;
+            transition: 0.3s;
+            border: 1px solid transparent;
+        }
+
+        .tag:hover { background: rgba(255,255,255,0.1); }
+        .tag.active {
+            background: var(--text-color);
+            color: #000;
+            box-shadow: 0 0 15px rgba(255,255,255,0.3);
+        }
+
+        /* 按钮组 */
+        .actions {
+            margin-top: 50px;
+            display: flex;
+            gap: 50px;
+        }
+
+        .action-btn {
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 30px;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-trash { 
+            background: #333; 
+            color: #fff;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .btn-burn { 
+            background: linear-gradient(135deg, #ff4500, #ffcc00);
+            color: #fff;
+            box-shadow: 0 5px 20px rgba(255, 69, 0, 0.4);
+        }
+
+        .action-btn:hover { transform: scale(1.1); }
+        .action-btn:active { transform: scale(0.9); }
+
+        /* ---------------- 炫酷特效 CSS ---------------- */
+
+        /* 1. 垃圾桶特效：揉成纸团 + 抛物线 */
+        @keyframes crumple-anim {
+            0% { transform: scale(1) rotate(0deg); border-radius: 12px; }
+            30% { transform: scale(0.7) rotate(-5deg) skewX(10deg); border-radius: 30%; background: #555; }
+            60% { transform: scale(0.3) rotate(180deg) skewY(20deg); border-radius: 50%; background: #333; }
+            100% { transform: scale(0.1) rotate(720deg); border-radius: 50%; background: #111; opacity: 0; }
+        }
+
+        @keyframes drop-anim {
+            0% { top: 0; opacity: 1; }
+            100% { top: 600px; opacity: 0; }
+        }
+
+        .effect-crumple {
+            animation: crumple-anim 0.8s forwards cubic-bezier(0.6, -0.28, 0.735, 0.045);
+        }
+        
+        /* 让容器下落 */
+        .input-wrapper.falling {
+            animation: drop-anim 0.8s forwards ease-in;
+        }
+
+        /* 2. 燃烧特效：变黑 + 摇晃 */
+        @keyframes char-anim {
+            0% { background: var(--card-bg); filter: brightness(1); }
+            50% { background: #3a1e1e; filter: brightness(0.8); }
+            100% { background: #000; opacity: 0; filter: brightness(0); }
+        }
+
+        /* 屏幕剧烈抖动 */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            20% { transform: translate(-3px, 0px) rotate(1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            40% { transform: translate(1px, -1px) rotate(1deg); }
+            50% { transform: translate(-1px, 2px) rotate(-1deg); }
+            60% { transform: translate(-3px, 1px) rotate(0deg); }
+            70% { transform: translate(3px, 1px) rotate(-1deg); }
+            80% { transform: translate(-1px, -1px) rotate(1deg); }
+            90% { transform: translate(1px, 2px) rotate(0deg); }
+            100% { transform: translate(1px, -2px) rotate(-1deg); }
+        }
+
+        .effect-char {
+            animation: char-anim 1.5s forwards ease-in;
+        }
+
+        .shake-screen {
+            animation: shake 0.5s;
+            animation-iteration-count: 2; /* 抖动两次 */
+        }
+
+        /* 回收站侧边栏 (样式优化) */
+        .history-panel {
+            position: fixed;
+            top: 0; right: 0; bottom: 0; width: 350px;
+            background: #1a1a1a;
+            border-left: 1px solid #333;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 100;
+            display: flex; flex-direction: column;
+            box-shadow: -10px 0 30px rgba(0,0,0,0.5);
+        }
+        .history-panel.open { transform: translateX(0); }
+        .history-header { padding: 20px; border-bottom: 1px solid #333; display: flex; justify-content: space-between; color: #fff; }
+        .history-list { flex: 1; overflow-y: auto; padding: 10px; }
+        .history-item { 
+            background: #252525; margin-bottom: 10px; padding: 15px; border-radius: 8px; 
+            border-left: 3px solid #555; 
+        }
+        .history-item.type-burn { border-left-color: var(--fire-outer); }
+        .history-item.type-trash { border-left-color: #666; }
+        .history-date { font-size: 12px; color: #666; margin-bottom: 5px; display: flex; justify-content: space-between; }
+        .history-text { font-size: 14px; color: #ccc; white-space: pre-wrap; }
+
+    </style>
+</head>
+<body>
+    <!-- 粒子特效画布 -->
+    <canvas id="particleCanvas"></canvas>
+
+    <header>
+        <div style="font-weight: 900; letter-spacing: 1px; color: #fff;">EMOTION BURNER</div>
+        <button class="history-btn" onclick="toggleHistory()">废弃场</button>
+    </header>
+
+    <main id="mainContent">
+        <div class="input-wrapper" id="paperSheet">
+            <div class="paper-sheet">
+                <textarea id="emotionText" placeholder="把你的焦虑、愤怒、不安都倒在这里..."></textarea>
+            </div>
+        </div>
+
+        <div class="tags-wrapper" id="tagList"></div>
+
+        <div class="actions">
+            <button class="action-btn btn-trash" onclick="trashAction()" title="揉成纸团扔掉">🗑️</button>
+            <button class="action-btn btn-burn" onclick="burnAction()" title="彻底焚烧">🔥</button>
+        </div>
+    </main>
+
+    <div class="history-panel" id="historyPanel">
+        <div class="history-header">
+            <h3>情绪废弃场</h3>
+            <span onclick="toggleHistory()" style="cursor:pointer; font-size:24px;">&times;</span>
+        </div>
+        <div class="history-list" id="historyList"></div>
+        <button onclick="clearHistory()" style="padding:15px; background:none; border:none; color:#ff4500; cursor:pointer; width:100%;">清空所有记录</button>
+    </div>
+
+    <script>
+        // --- 核心逻辑 ---
+        const tags = ['#工作屎山', '#甲方傻X', '#想分手', '#内耗', '#没钱'];
+        let currentTag = '';
+        const paperEl = document.querySelector('.paper-sheet');
+        const wrapperEl = document.querySelector('.input-wrapper');
+        const inputEl = document.getElementById('emotionText');
+
+        // 初始化标签
+        const tagContainer = document.getElementById('tagList');
+        tags.forEach(tag => {
+            const span = document.createElement('span');
+            span.className = 'tag';
+            span.innerText = tag;
+            span.onclick = () => {
+                document.querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
+                if(currentTag !== tag) {
+                    span.classList.add('active');
+                    currentTag = tag;
+                } else {
+                    currentTag = '';
+                }
+            };
+            tagContainer.appendChild(span);
+        });
+
+        // 1. 垃圾桶特效逻辑 (3D揉纸 + 下落)
+        function trashAction() {
+            const text = inputEl.value.trim();
+            if(!text) return shakeInput();
+
+            // 锁定输入
+            inputEl.setAttribute('disabled', 'true');
+
+            // 1. 纸团变形动画
+            paperEl.classList.add('effect-crumple');
+            
+            // 2. 整体下落动画 (稍微延迟一点，等纸团成型)
+            setTimeout(() => {
+                wrapperEl.classList.add('falling');
+            }, 300);
+
+            // 3. 结束清理
+            setTimeout(() => {
+                saveData(text, currentTag, 'trash');
+                resetUI();
+            }, 1000);
+        }
+
+        // 2. 燃烧特效逻辑 (粒子系统 + 屏幕震动)
+        function burnAction() {
+            const text = inputEl.value.trim();
+            if(!text) return shakeInput();
+
+            inputEl.setAttribute('disabled', 'true');
+
+            // 1. 屏幕震动
+            document.body.classList.add('shake-screen');
+
+            // 2. 纸张变黑焦化
+            paperEl.classList.add('effect-char');
+
+            // 3. 启动粒子火焰 (获取输入框的位置)
+            const rect = paperEl.getBoundingClientRect();
+            startFire(rect.left + rect.width / 2, rect.bottom - 50, rect.width);
+
+            // 4. 结束清理
+            setTimeout(() => {
+                saveData(text, currentTag, 'burn');
+                stopFire();
+                document.body.classList.remove('shake-screen');
+                resetUI();
+            }, 2000);
+        }
+
+        // 辅助：空输入震动
+        function shakeInput() {
+            wrapperEl.style.transform = 'translateX(10px)';
+            setTimeout(() => wrapperEl.style.transform = 'translateX(-10px)', 50);
+            setTimeout(() => wrapperEl.style.transform = 'translateX(5px)', 100);
+            setTimeout(() => wrapperEl.style.transform = 'translateX(0)', 150);
+        }
+
+        function resetUI() {
+            inputEl.value = '';
+            inputEl.removeAttribute('disabled');
+            paperEl.classList.remove('effect-crumple', 'effect-char');
+            wrapperEl.classList.remove('falling');
+            currentTag = '';
+            document.querySelectorAll('.tag').forEach(t => t.classList.remove('active'));
+            renderHistory();
+        }
+
+        // --- 粒子系统 (Canvas Fire Engine) ---
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        let animationId;
+        let isBurning = false;
+
+        // 调整画布大小
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Particle {
+            constructor(x, y, widthSpread) {
+                this.x = x + (Math.random() - 0.5) * widthSpread; // 在输入框宽度范围内生成
+                this.y = y + (Math.random() - 0.5) * 20;
+                // 向上飘的随机速度
+                this.vx = (Math.random() - 0.5) * 2; 
+                this.vy = Math.random() * -5 - 2; 
+                this.size = Math.random() * 8 + 4; // 粒子大小
+                this.life = 100; // 生命值
+                this.decay = Math.random() * 2 + 1; // 衰减速度
+                // 颜色随机：红、橙、黄
+                const colors = ['#ff4500', '#ff8c00', '#ffd700', '#333']; 
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.life -= this.decay;
+                this.size -= 0.1; // 慢慢变小
+                // 稍微摇摆
+                this.vx += (Math.random() - 0.5) * 0.2;
+            }
+
+            draw() {
+                ctx.globalAlpha = this.life / 100;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, Math.max(0, this.size), 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function startFire(x, y, width) {
+            isBurning = true;
+            particles = [];
+            
+            function loop() {
+                if (!isBurning && particles.length === 0) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    cancelAnimationFrame(animationId);
+                    return;
+                }
+
+                // 每一帧清空画布（带一点拖尾效果可选，这里直接清空保持清晰）
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // 混合模式：让火焰叠加发光
+                ctx.globalCompositeOperation = 'screen';
+
+                // 生成新粒子
+                if (isBurning) {
+                    for (let i = 0; i < 10; i++) {
+                        particles.push(new Particle(x, y, width));
+                    }
+                }
+
+                // 更新和绘制粒子
+                for (let i = particles.length - 1; i >= 0; i--) {
+                    const p = particles[i];
+                    p.update();
+                    p.draw();
+                    if (p.life <= 0 || p.size <= 0) {
+                        particles.splice(i, 1);
+                    }
+                }
+
+                animationId = requestAnimationFrame(loop);
+            }
+            loop();
+        }
+
+        function stopFire() {
+            isBurning = false;
+        }
+
+        // --- 数据存储 (LocalStorage) 与 侧边栏 ---
+        function saveData(text, tag, type) {
+            const history = JSON.parse(localStorage.getItem('emo_trash_v2') || '[]');
+            history.unshift({
+                text, tag: tag || '#无题', type,
+                date: new Date().toLocaleString()
+            });
+            localStorage.setItem('emo_trash_v2', JSON.stringify(history));
+        }
+
+        function toggleHistory() {
+            const p = document.getElementById('historyPanel');
+            p.classList.toggle('open');
+            if(p.classList.contains('open')) renderHistory();
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('historyList');
+            const data = JSON.parse(localStorage.getItem('emo_trash_v2') || '[]');
+            list.innerHTML = data.map(item => `
+                <div class="history-item type-${item.type}">
+                    <div class="history-date">
+                        <span>${item.date}</span>
+                        <span>${item.type === 'burn' ? '🔥 焚烧' : '🗑️ 抛弃'} ${item.tag}</span>
+                    </div>
+                    <div class="history-text">${item.text}</div>
+                </div>
+            `).join('') || '<div style="text-align:center;color:#666;margin-top:50px;">空空如也</div>';
+        }
+        
+        function clearHistory() {
+            localStorage.removeItem('emo_trash_v2');
+            renderHistory();
+        }
+    </script>
+</body>
+</html>
